@@ -11,7 +11,8 @@ version = sys.version_info.major
 #hardcoded stuff
 #path = 'C:/Users/exouser/Desktop/xpm_fitter_data/'    
 #path = './'    
-path = '/mnt/c/Users/exouser/Desktop/xpm_fitter_data/'    
+#path = '/mnt/c/Users/exouser/Desktop/xpm_fitter_data/'    
+path = '/home/kolo/Downloads/kolos_stuff_from_lab_PC/'    
 
 tree = ROOT.TTree('xpmdata','')
 myhist = ROOT.TH2F()
@@ -111,33 +112,76 @@ while(1):
     if sel == str(1):
         #plt.clf()
         tree.Reset()
-        tree.ReadFile(path+file_name+'.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV:chi2:nAvg:nTrig',',')
-        tree.Draw('(Tc-Ta)/log(an/cat):datime','','goff')
-        lf_time = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
-        avg_samples = int(str(myinput('Number of Samples to Average: ')))
-        nbinsX = int( tree.GetEntries()/avg_samples )
-        t0 = tree.GetV2()[0]
-        t1 = tree.GetV2()[tree.GetEntries()-1]
-        tree.Draw('(Tc-Ta)/log(an/cat):(datime-'+str(t0)+')/3600.0','','goff')
-        norm_time_clean = vtoa( tree.GetV2() , tree.GetSelectedRows() - 1 )
-        myhist=ROOT.TH2F()
-        tau = vtoa( tree.GetV1() , tree.GetEntries() )
-        maxtau = np.max( tau )
-        #maxtau = 50000.0
-        myhist=ROOT.TH2F('myhist','',nbinsX,0.0,(t1-t0)/3600.0,int(maxtau/100.0),0.0,maxtau)
-        com = '(Tc-Ta)/log(an/cat):(datime-'+str(t0)+')/3600.0>>myhist'
+        #tree.ReadFile(path+file_name+'.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV:chi2:nAvg:nTrig',',')
+        tree.ReadFile(path+file_name+'.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV',',')
+        #tree.Draw('(Tc-Ta)/log(an/cat):datime','','goff')
+        tree.ReadFile('control6bint.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV',',')
+        start_ = datetime.datetime(2020,9,1).timestamp() + 126144000 + 2208988800 
+        stop_ = datetime.datetime(2020,9,12).timestamp() + 126144000 + 2208988800
+
+        tree.Draw('>>elist','datime>'+str(start_)+' && '+'datime<' +str(stop_))
+        tree.SetEventList(ROOT.elist)
         mindiff = float(str(myinput('Minimum cathode-anode difference [mV]: ')))
         tcut = 'UV>30 && cat>0 && an>0 && an<(cat-'+str(mindiff)+')'
+        print(tree.Draw('Entry$:datime',tcut,'goff'))
+        #print(tree.Draw('Entry$:datime','','goff'))
+        lf_time = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
+        avg_samples = int(str(myinput('Number of Samples to Average: ')))
+        nbinsX = int( tree.GetSelectedRows()/avg_samples )
+        t0 = tree.GetV2()[0]
+        t1 = tree.GetV2()[tree.GetSelectedRows()-1]
+        #tcut = 'UV>30 && cat>0 && an>0 && an<(cat-'+str(mindiff)+')'
+
+        ##################### binning by Fiber Save group ################## 
+        timebucket = []
+        tlow = []
+        tcent = []
+        for entry in range(1,tree.GetSelectedRows()) :
+            dt = tree.GetV2()[entry] - tree.GetV2()[entry-1]
+            if dt < 5*3600.0 :
+                timebucket.append(tree.GetV2()[entry-1])
+            else :
+                try :
+                    tlow.append( np.array(timebucket).min()-1.0 )
+                    tlow.append( np.array(timebucket).max()+1.0 )
+                    tcent.append( np.array(timebucket).mean() )
+                    print(len(timebucket),(tree.GetV2()[entry-1]-t0)/3600.0)
+                    timebucket = []
+                except ValueError :
+                    pass
+        tlow.append( np.array(timebucket).min() )
+        tlow.append( np.array(timebucket).max() )
+        tcent.append( np.array(timebucket).mean() )
+        tlow = (np.array(tlow) - t0)/3600.0
+        tcent = (np.array(tcent) - t0)/3600.0
+        print('number of bins',len(tlow))
+        ####################################################################
+
+        tree.Draw('(Tc-Ta)/log(an/cat):(datime-'+str(t0)+')/3600.0',tcut,'goff')
+        norm_time_clean = vtoa( tree.GetV2() , tree.GetSelectedRows() - 1 )
+        #myhist=ROOT.TH2F()
+        #tau = vtoa( tree.GetV1() , tree.GetEntries() )
+        tau = vtoa( tree.GetV1() , tree.GetSelectedRows() )
+        maxtau = np.max( tau )
+        print(maxtau)
+        maxtau = 50000.0*300.0
+        #myhist=ROOT.TH2F('myhist','',nbinsX,0.0,(t1-t0)/3600.0,int(maxtau/100.0),0.0,maxtau)
+        #myhist=ROOT.TH2F('myhist','',nbinsX,0.0,(t1-t0)/3600.0,50,0.0,maxtau)
+        myhist = ROOT.TH2F('myhist','',len(tlow)-1,tlow,200,0.0,maxtau)
+        com = '(Tc-Ta)*300.0/log(an/cat):(datime-'+str(t0)+')/3600.0>>myhist'
         print(tree.Draw(com,tcut,'goff'))
         myprof = myhist.ProfileX()
         myprof.SetMarkerStyle(20)
+        #myprof.Rebin(3)
+        
         #myprof.Draw('e')
         x = []
         y = []
         e = []
         ex = []
-        for bin in range(1,myprof.GetNbinsX()+1) :
-            if( myprof.GetBinEntries(bin)<=1 ): continue
+        for bin in range(1,myprof.GetNbinsX()+2) :
+            print(bin,myprof.GetBinContent(bin),myprof.GetBinEntries(bin))
+            if( myprof.GetBinEntries(bin)<=3 ): continue
             x.append(myprof.GetBinCenter(bin))
             y.append(myprof.GetBinContent(bin))
             e.append(myprof.GetBinError(bin))
@@ -147,9 +191,10 @@ while(1):
         fexp = ROOT.TF1('fexp','expo + [2]',x[0],x[-1])
         row_labels=['$\chi^2$/ndf','Constant','Slope','Baseline']
         if fitfunc=='R' :
-            fexp = ROOT.TF1('fexp','[0]/([1]+[2]*x)',x[0],x[-1])
-            fexp.SetParameters(myprof.GetBinContent(1)*2,2.0,0.005) 
-            row_labels=['$\chi^2$/ndf','A','B','C']
+            fexp = ROOT.TF1('fexp','[0]*300/([1]*300.0+[2]*[0]*3600.0*5.5e-3*x/(1.0e-9*300.0*1.53))',x[0],x[-1])
+            #fexp.SetParameters(myprof.GetBinContent(1)*2,2.0,0.005) 
+            fexp.SetParameters(myprof.GetBinContent(1)*2.0,2.0,2.0e-15) 
+            row_labels=['$\chi^2$/ndf','$A$','$B$','$R_0$']
 
         myprof.Fit(fexp,'N')
         #myprof.Fit(fexp,'NM')
@@ -179,19 +224,26 @@ while(1):
                                   fontsize=8,
                                   colWidths=[0.3]*3,
                                   loc='upper right')
-            plt.title(tcut+' ; '+ str(avg_samples)+' samples/bin')
-            plt.errorbar(x,y,e,ex,fmt='ro')
+            plt.title(tcut+'\n'+ str(np.around(myprof.GetEntries()/myprof.GetNbinsX(),1))+' post-cut samples/bin')
+            #plt.errorbar(x,y,e,ex,fmt='ro')
+            plt.errorbar(x,y,e,fmt='ro')
             plt.plot(xfit,yfit,'b-')
             plt.xlabel('Hours')
             plt.annotate('Average', xy=(0.1, 0.95), xycoords='axes fraction',color='red',weight='bold')
-            plt.ylabel('e$^{-}$ lifetime [$\mu$s]')
+            #plt.ylabel('e$^{-}$ lifetime [$\mu$s]')
+            plt.ylabel('[O$_2$] [ppb]')
+            cut_time = vtoa( tree.GetV2() , tree.GetSelectedRows() - 1 )
+            cut_tau = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
+            #plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
+            plt.plot(cut_time,cut_tau,'m^',markersize=1.5,zorder=-32)           
             #plt.show(block=False)
+            plt.show()
         elif llsel == str(2):
             tree.Draw(com,tcut,'goff')
             cut_time = vtoa( tree.GetV2() , tree.GetSelectedRows() - 1 )
             cut_tau = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
             plt.close()
-            plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
+            #plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
             plt.plot(cut_time,cut_tau,'m^',markersize=1.5,zorder=-32)           
             plt.xlabel('Hours')
             plt.ylabel('e$^{-}$ lifetime [$\mu$s]')
@@ -211,7 +263,7 @@ while(1):
             tree.Draw(com,tcut,'goff')
             cut_time = vtoa( tree.GetV2() , tree.GetSelectedRows() - 1 )
             cut_tau = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
-            plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
+            #plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
             plt.plot(cut_time,cut_tau,'m^',markersize=1.5,zorder=-32)           
             #plt.errorbar(subsample_norm_time,avg,yerr=err/np.sqrt(avg_samples-1),fmt='ro')
             #plt.title('Raw Lifetime and Lifetime Averaged Over %i Samples'%avg_samples)
@@ -219,7 +271,8 @@ while(1):
             if time_choice == 'hour': plt.xlabel('Hours') 
             plt.ylabel('e$^{-}$ lifetime [$\mu$s]')
             plt.annotate('Average', xy=(0.1, 0.95), xycoords='axes fraction',color='red',weight='bold')
-            plt.show(block=False)
+            #plt.show(block=False)
+            plt.show()
         elif llsel == str(4):
             plt.close()
             tree.Draw('log((Tc-Ta)/log(an/cat)):datime','','goff')
@@ -228,7 +281,7 @@ while(1):
             lnhist=ROOT.TH2F()
             tau = vtoa( tree.GetV1() , tree.GetEntries() )
             maxtau = np.max( tau )
-            #maxtau = 50000.0
+            maxtau = 50000.0
             lnhist=ROOT.TH2F('lnhist','',nbinsX,0.0,(t1-t0)/3600.0,int(np.exp(maxtau)/100.0),0.0,maxtau)
             com = 'log((Tc-Ta)/log(an/cat)):(datime-'+str(t0)+')/3600.0>>lnhist'
             tcut = 'UV>30 && cat>0 && an>0 && an<(cat-'+str(mindiff)+')'
@@ -282,7 +335,7 @@ while(1):
             cut_tau = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
             ptsel = str(myinput('Superimpose scatterplot (Y/N)?'))
             if ptsel == 'Y' :
-                plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
+                #plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
                 plt.plot(cut_time,cut_tau,'m^',markersize=1.5,zorder=-32)           
             if time_choice == 'day': plt.xticks(rotation=25)
             if time_choice == 'hour': plt.xlabel('Hours') 
@@ -354,7 +407,7 @@ while(1):
             plt.annotate('Mode', xy=(0.1, 0.95), xycoords='axes fraction',color='red',weight='bold')
             ptsel = str(myinput('Superimpose scatterplot (Y/N)?'))
             if ptsel == 'Y' :
-                plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
+                #plt.plot(norm_time_clean,lf_time,'go',markersize=1.5,zorder=-32)           
                 plt.plot(cut_time,cut_tau,'m^',markersize=1.5,zorder=-32)           
             if time_choice == 'day': plt.xticks(rotation=25)
             if time_choice == 'hour': plt.xlabel('Hours') 
@@ -400,7 +453,8 @@ while(1):
         print('hello')
         plt.close()
         tree.Reset()
-        tree.ReadFile(path+file_name+'.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV:chi2:nAvg:nTrig',',')
+        #tree.ReadFile(path+file_name+'.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV:chi2:nAvg:nTrig',',')
+        tree.ReadFile(path+file_name+'.txt','Tc:Ta:TcRise:TaRise:cat:an:offst:datime:IR:UV',',')
         tree.Draw('UV:cat','cat>0','goff')
         cat_sig = vtoa( tree.GetV2() , tree.GetSelectedRows() - 1 )
         uv_sig = vtoa( tree.GetV1() , tree.GetSelectedRows() - 1 )
@@ -418,7 +472,8 @@ while(1):
     elif sel == str(6): break
 
     else: print('Press 1-5 or 6 to exit')
-    plt.show(block=False)
+    #plt.show(block=False)
+    plt.show()
 '''    elif sel == str(6):
         lf_time = (raw_input_file[:,1]-raw_input_file[:,0])/np.log(raw_input_file[:,4]/raw_input_file[:,5])
         avg,err = smooth(lf_time,2)
