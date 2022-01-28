@@ -31,8 +31,7 @@ class grafit(Frame):
         self.ser.send(msg.encode('iso-8859-1'))
 
     def plotit(self):
-        start_time = time.time()
-        while self.btn_var3.get() == 'STOP' :
+        while True :
             self.is_running = (self.btn_var3.get() == 'STOP')
             if self.is_running == False :
                 continue
@@ -46,17 +45,18 @@ class grafit(Frame):
             volt = float(data)
             volt = ((volt/1024.0)*5.0)/6.0 #conversion from counts to current assuming 10 bits, 6 ohms
 
-            self.xar.append((time.time() - start_time) / 3600.0)
+            self.xar.append((time.time() - self.start_time) / 3600.0)
             self.yar.append(volt)
             if len(self.xar) > 86400:
                 self.xar.pop(0)
                 self.yar.pop(0)
-            plt.clf()
+            print("getting here")
+            #plt.cla()
             plt.plot(self.xar, self.yar, 'ro-')
             plt.title("Current vs Time")
             plt.ylabel('Current (A)')
             plt.xlabel('Time (hours)')
-            self.plot_widget.grid(row=0, column=2)
+            #self.plot_widget.grid(row=0, column=2)
             self.fig.canvas.draw()
 
             time.sleep(1.0)
@@ -64,39 +64,46 @@ class grafit(Frame):
 
     def __init__(self):
         self.window = Tk()
-        self.window.geometry('240x120')
-        self.window.title('autoshutter')
+        self.window.geometry('750x625')
+        self.window.title('XPM Shutter Control')
         self.ser = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.ser.connect(('10.0.0.4', 5047))  # change to the IP of the arduino
+        self.ser.connect(('10.0.0.4', 5047))  # Arduino server connection
 
-        Label(self.window, text='DC [%]').grid(row=1)
+        Label(self.window, text='DC [%]').grid(column=3, row=2) # slider label
 
         self.xar = []
         self.yar = []
         self.is_running = False
 
+        # duty cycle slider
         self.dc_var = DoubleVar(self.window, 50.0)
         self.dc_slider = Scale(self.window, command=self.set_dc, orient=HORIZONTAL, resolution=-1, from_=10.0, to=100.0,
                                variable=self.dc_var)
-        self.dc_slider.grid(column=1, row=1)
+        self.dc_slider.grid(column=3, row=3)
 
+        # DC/pulse button
         self.btn_var = StringVar(self.window, 'CW')
         LABEL0, LABEL1 = 'CW', 'PULSED'
         self.xr = Checkbutton(self.window, textvariable=self.btn_var, width=12, variable=self.btn_var,
                               offvalue=LABEL0, onvalue=LABEL1, indicator=False, command=self.set_dc)
-        self.xr.grid(column=1, row=0)
+        self.xr.grid(column=3, row=1)
 
+        # solenoid ON/OFF
         self.btn_var2 = StringVar(self.window, 'OFF')
         LABEL2, LABEL3 = 'ON', 'OFF'
         self.sol = Checkbutton(self.window, textvariable=self.btn_var2, width=12, variable=self.btn_var2,
                                offvalue=LABEL3, onvalue=LABEL2, indicator=False, command=self.set_dc)
-        self.sol.grid(column=1, row=3)
+        self.sol.grid(column=3, row=4)
 
+        # start/stop graphing
         self.btn_var3 = StringVar(self.window, 'START')
         LABEL4, LABEL5 = 'START', 'STOP'
         self.st = Checkbutton(self.window, textvariable=self.btn_var3, width=12, variable=self.btn_var3,
-                               offvalue=LABEL4, onvalue=LABEL5, indicator=False, command=lambda: Thread(target=self.plotit).start())
-        self.st.grid(column=1, row=4)
+                               offvalue=LABEL4, onvalue=LABEL5, indicator=False)
+        self.st.grid(column=3, row=5)
+        self.plotter = Thread(target=self.plotit)
+        self.plotter.start()
+        self.start_time = time.time()
 
         Label(self.window, text=' ').grid(row=2)
         self.window.protocol('WM_DELETE_WINDOW', self.on_closing)
@@ -127,9 +134,8 @@ class grafit(Frame):
 
         self.fig.canvas.draw()
 
-        self.plotter = threading.Thread(target=self.plotit)
 
-        self.plotter.start()
+        self.plotter.start()  # start plotting data
         self.window.mainloop()
 
 appl = grafit()
