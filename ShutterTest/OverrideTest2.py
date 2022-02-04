@@ -37,7 +37,7 @@ class grafit(Frame):
             self.ser.send('???\n'.encode())
             c=''
             data = ''
-            while c != '\r' :
+            while c != '\n' :
                 c = self.ser.recv(1).decode()
                 data = data + c
             print('received '+data)
@@ -70,8 +70,8 @@ class grafit(Frame):
         self.window.geometry('750x625')
         self.window.title('XPM Shutter Control')
         self.ser = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #self.ser.connect(('10.0.0.4', 5047))  # Arduino server connection
-        self.ser.connect(('127.0.0.1', 5047))  # Arduino server connection
+        self.ser.connect(('10.0.0.4', 5047))  # Arduino server connection
+        #self.ser.connect(('127.0.0.1', 5047))  # Arduino server connection
 
         Label(self.window, text='DC [%]').grid(column=3, row=1) # slider label
 
